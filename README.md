@@ -1,4 +1,4 @@
-# AgentCashier
+AgentCashier
 
 Gated agentic commerce for the Razorpay AI Buildathon **Track 01 — AI Growth & Agentic Commerce**.
 
@@ -25,13 +25,15 @@ The buyer agent calls tools over HTTP. Set `GROQ_API_KEY` (or `LLM_API_KEY`) for
 
 Three actors plus Razorpay. The LLM is allowed to shop. It is not allowed to pay.
 
-| Piece | What it is | What it is allowed to do |
-|---|---|---|
-| **Buyer agent** (left UI) | Groq LLM with tools, or a keyword fallback | `search_catalog`, `get_quote` only |
-| **Merchant catalog** | SKUs, prices in paise, stock | Read-only menu for the agent |
-| **Cashier** (right UI / `cashierService`) | Node + Mongo, not an LLM | Cap, allowlist, freeze price, create Razorpay order, capture/fail, audit |
-| **Razorpay** | Test-mode Orders + Checkout + webhooks | Move money only after the cashier creates an order |
-| **Desk (React)** | Interview x-ray of the lock | Chat, mandates, FSM, audit, evals |
+
+| Piece                                     | What it is                                 | What it is allowed to do                                                 |
+| ----------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
+| **Buyer agent** (left UI)                 | Groq LLM with tools, or a keyword fallback | `search_catalog`, `get_quote` only                                       |
+| **Merchant catalog**                      | SKUs, prices in paise, stock               | Read-only menu for the agent                                             |
+| **Cashier** (right UI / `cashierService`) | Node + Mongo, not an LLM                   | Cap, allowlist, freeze price, create Razorpay order, capture/fail, audit |
+| **Razorpay**                              | Test-mode Orders + Checkout + webhooks     | Move money only after the cashier creates an order                       |
+| **Desk (React)**                          | Interview x-ray of the lock                | Chat, mandates, FSM, audit, evals                                        |
+
 
 Mandates (AP2-shaped, HMAC-signed):
 
@@ -152,14 +154,26 @@ Cases: under-cap quote, over-cap, injection SKU, wrong merchant, unknown SKU, pr
 4. Simulate decline → retry same idempotency key.
 5. Run evals, show pass table.
 
+
+
+## Reset remaining cap to ₹500 
+There is no cap field in the UI. The ₹500 envelope is stored on the Demo Buyer in Mongo.
+(also resets spend to 0 and re-seeds the catalog):
+```
+npm run seed
+```
+
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/v1/auth/start` | Open session + intent mandate |
-| POST | `/api/v1/chat` | Buyer agent turn |
-| POST | `/api/v1/quotes` | Cashier cart (also used by the agent) |
-| POST | `/api/v1/checkout` | Create Razorpay order |
-| POST | `/api/v1/checkout/:id/fake` | Dev capture / decline |
-| POST | `/api/v1/webhooks/razorpay` | Signed webhook |
-| POST | `/api/v1/evals/run` | Money-safety suite |
+
+| Method | Path                        | Purpose                               |
+| ------ | --------------------------- | ------------------------------------- |
+| POST   | `/api/v1/auth/start`        | Open session + intent mandate         |
+| POST   | `/api/v1/chat`              | Buyer agent turn                      |
+| POST   | `/api/v1/quotes`            | Cashier cart (also used by the agent) |
+| POST   | `/api/v1/checkout`          | Create Razorpay order                 |
+| POST   | `/api/v1/checkout/:id/fake` | Dev capture / decline                 |
+| POST   | `/api/v1/webhooks/razorpay` | Signed webhook                        |
+| POST   | `/api/v1/evals/run`         | Money-safety suite                    |
+
+
