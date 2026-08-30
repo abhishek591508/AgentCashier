@@ -92,6 +92,16 @@ User ──chat──► Buyer agent (AI) ──get_quote──► Cashier ─�
                       ▼                           ├── HMAC mandates
                  Merchant catalog                 └── audit + FSM
 ```
+## Images
+<img width="1005" height="482" alt="Screenshot 2026-08-30 213215" src="https://github.com/user-attachments/assets/b21d2e1b-375f-418d-b4b1-749d0df0c3d4" />
+<img width="1017" height="411" alt="Screenshot 2026-08-30 213249" src="https://github.com/user-attachments/assets/bad66396-f259-43fe-97a7-df46d3451fe2" />
+
+<img width="1002" height="416" alt="image" src="https://github.com/user-attachments/assets/f1968683-cbb3-4449-952a-ef3789ca016e" />
+<img width="1017" height="420" alt="Screenshot 2026-08-30 213353" src="https://github.com/user-attachments/assets/b82e0f27-3b5f-40d3-b047-29dcb748f26a" />
+<img width="1007" height="427" alt="Screenshot 2026-08-30 213403" src="https://github.com/user-attachments/assets/d0e96e83-5f95-4e12-907c-85681d3d0e60" />
+<img width="1007" height="497" alt="Screenshot 2026-08-30 213417" src="https://github.com/user-attachments/assets/7997b151-acc7-46c8-ae38-4db934346e1a" />
+
+
 
 ## How to use
 
