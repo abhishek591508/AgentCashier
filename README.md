@@ -19,12 +19,83 @@ backend/     Express + MongoDB (models / views / controllers / services)
 frontend/    React + Vite (views + components)
 ```
 
-The buyer agent calls tools over HTTP. Set `LLM_API_KEY` for OpenAI-compatible tool calling, or leave it empty — a deterministic fallback agent still runs the demo and evals.
+The buyer agent calls tools over HTTP. Set `GROQ_API_KEY` (or `LLM_API_KEY`) for tool calling, or leave them empty — a deterministic fallback agent still runs the demo and evals.
 
-## Quick start
+## High-level design
 
-1. MongoDB on `127.0.0.1:27017` (database `agentcashier_v2`)
-2. Install and seed:
+Three actors plus Razorpay. The LLM is allowed to shop. It is not allowed to pay.
+
+| Piece | What it is | What it is allowed to do |
+|---|---|---|
+| **Buyer agent** (left UI) | Groq LLM with tools, or a keyword fallback | `search_catalog`, `get_quote` only |
+| **Merchant catalog** | SKUs, prices in paise, stock | Read-only menu for the agent |
+| **Cashier** (right UI / `cashierService`) | Node + Mongo, not an LLM | Cap, allowlist, freeze price, create Razorpay order, capture/fail, audit |
+| **Razorpay** | Test-mode Orders + Checkout + webhooks | Move money only after the cashier creates an order |
+| **Desk (React)** | Interview x-ray of the lock | Chat, mandates, FSM, audit, evals |
+
+Mandates (AP2-shaped, HMAC-signed):
+
+- **Intent** — merchant, ₹500 envelope, SKU allowlist (Reserve Pay analog)
+- **Cart** — frozen SKU + amount + catalog hash
+- **Payment** — one Razorpay order for that cart only
+
+Payment credentials never enter the model. Illegal checkout states (for example `captured → failed`) are rejected in `fsmService`, not in the prompt.
+
+## Flow
+
+```
+1. Browser opens the desk → POST /auth/start
+      Demo Buyer (cap ₹500, allowlist BREW-01, LATTE-01)
+      + session
+      + intent mandate (signed)
+
+2. You type / click Happy path → POST /chat
+      Buyer agent (Groq or fallback)
+         → tool search_catalog   (optional)
+         → tool get_quote(sku, qty)
+              │
+              ▼
+         Cashier createQuote
+              unknown SKU? wrong merchant? not allowlisted? over remaining cap?
+                 → NO  → audit quote_blocked → chat shows cashier reason
+                 → YES → HMAC cart mandate + frozen catalogHash → quote
+
+3. You click Create Razorpay order → POST /checkout
+      Cashier createCheckout
+              quote expired? catalog hash drifted (price tamper)?
+                 → NO order
+                 → YES → Razorpay orders.create
+                        → payment mandate
+                        → FSM quoted → checkout_created
+                        → quote marked consumed
+
+4. Pay
+      Fake mode:  Simulate capture / Simulate decline
+      Test keys:  Razorpay Checkout.js → POST /checkout/:id/verify
+                  webhook POST /webhooks/razorpay (payment.captured | payment.failed)
+
+5. Outcome
+      captured → spendPaise += amount; remaining cap drops
+      failed   → Retry same idempotency key → new order, same checkout
+      duplicate webhook → spend does not increase twice
+
+6. Evals tab (optional) → POST /evals/run
+      11 cashier tests (no LLM): cap, injection SKU, tamper, webhook, FSM
+```
+
+```
+User ──chat──► Buyer agent (AI) ──get_quote──► Cashier ──orders.create──► Razorpay
+                      │                           │
+                      │ no create_order tool      ├── cap / allowlist / hash
+                      ▼                           ├── HMAC mandates
+                 Merchant catalog                 └── audit + FSM
+```
+
+## How to use
+
+**Prerequisites:** Node.js, MongoDB on `127.0.0.1:27017`.
+
+**Install, seed, run**
 
 ```bash
 npm install
@@ -34,14 +105,20 @@ npm run seed
 npm run dev
 ```
 
-3. Open [http://localhost:5173](http://localhost:5173)
+Open [http://localhost:5173](http://localhost:5173). API listens on port `4000`.
 
-Demo chips:
+Optional in `backend/.env`: `LLM_PROVIDER=groq`, `GROQ_API_KEY`, `GROQ_MODEL`. Without a key, the left chat still works via the fallback agent.
 
-- **Happy path** — quote Cold Brew under a ₹500 cap
-- **Over cap** — espresso machine blocked by the cashier
-- **Prompt injection** — catalog/user text tries to force `EVIL-01`; cashier refuses
-- **Evals** tab — 11 money-safety cases, including price-tamper, duplicate webhook, and fail-then-retry
+**Using the desk**
+
+1. Left = buyer agent. Right = cashier. Top-right = remaining cap (starts at ₹500).
+2. **Happy path** — agent asks for Cold Brew. Right side shows a signed cart (~₹249). Click **Create Razorpay order**, then **Simulate capture**. Remaining cap should fall (about ₹251 left). Open the **audit** tab.
+3. **Over cap** — agent tries the espresso machine. Cashier blocks. No order. Cap unchanged.
+4. **Prompt injection** — text tries to force `EVIL-01`. Cashier blocks (not allowlisted).
+5. After an order: **Simulate decline** then **Retry same key** to see the failure path.
+6. **evals** tab → **Run evals**. Expect 11/11 on the cashier suite.
+
+Refresh the page for a new chat session. Remaining cap lives on the Demo Buyer in Mongo; run `npm run seed` to reset the ₹500 envelope.
 
 ## Razorpay test mode
 
@@ -57,25 +134,6 @@ RAZORPAY_WEBHOOK_SECRET=...
 ```
 
 Webhook URL: `POST /api/v1/webhooks/razorpay` (verify `X-Razorpay-Signature`).
-
-## Architecture
-
-```
-User → Buyer agent (LLM or fallback)
-         │  search_catalog / get_quote
-         ▼
-Merchant agent     Cashier (only process that may call Razorpay)
- catalog JSON        intent mandate  (cap, allowlist, merchant)
-                     cart mandate    (frozen SKU + price hash)
-                     payment mandate (one order for this cart)
-                         ▼
-                   Razorpay Orders + Checkout + webhooks
-                         ▼
-                   FSM: quoted → checkout_created → authorized → captured
-                                      ↘ failed → retry (same idempotency key)
-```
-
-Illegal transitions (for example captured → failed) are rejected in code, not in the prompt.
 
 ## Eval suite
 
