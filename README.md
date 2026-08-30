@@ -154,7 +154,21 @@ Cases: under-cap quote, over-cap, injection SKU, wrong merchant, unknown SKU, pr
 4. Simulate decline → retry same idempotency key.
 5. Run evals, show pass table.
 
+## Where it broke and how I fixed it
 
+These are real failures from running this repo, not hypotheticals.
+
+**1. Evals died on Mongo: `E11000 email_1 dup key { email: null }`**  
+The first eval run used database `agentcashier`. An older schema had a unique index on `buyers.email`. The new `Buyer` model has no email field, so every insert was `email: null`, and unique indexes only allow one missing email.  
+**Fix:** pointed `MONGODB_URL` at a clean database (`agentcashier_v2`) instead of fighting leftover indexes. Seed and evals run there now.
+
+**2. “Over cap” eval was not testing over cap**  
+The espresso machine is both expensive *and* off the allowlist. `createQuote` checks allowlist first, so the case returned `NOT_ALLOWLISTED` and never hit `OVER_CAP`.  
+**Fix:** over-cap eval now quotes **three** allowlisted cold brews (`249 × 3 > ₹500`). Machine stays a separate allowlist/injection story.
+
+**3. Capture incremented spend on the wrong lookup; evals depended on fake pay**  
+Early `capture` tried to load the buyer through a nested `populate` on checkout in one expression — easy to get `session` as an ObjectId and skip the spend update, or throw. Evals also called `fakePay`, which no-ops when `DEV_FAKE_PAYMENTS` is off and real test keys are set, so the suite would fail on a “more real” env.  
+**Fix:** `capture` loads `Session` then `Buyer` explicitly, then adds `spendPaise`. Evals fire `handleWebhook` (`payment.captured` / `payment.failed`) so they test the same path as Razorpay, with or without fake mode.
 
 ## Reset remaining cap to ₹500 
 There is no cap field in the UI. The ₹500 envelope is stored on the Demo Buyer in Mongo.
